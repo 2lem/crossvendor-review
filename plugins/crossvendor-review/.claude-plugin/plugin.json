@@ -1,6 +1,6 @@
 {
   "name": "crossvendor-review",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Run review lenses and advisor questions on Codex, GLM, Grok and Muse from Claude Code, with Claude as the host that weighs the answers.",
   "author": {
     "name": "2lem"

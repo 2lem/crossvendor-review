@@ -5,13 +5,13 @@
   },
   "metadata": {
     "description": "Code review and technical advice spread across the AI vendors you choose.",
-    "version": "0.1.0"
+    "version": "0.1.1"
   },
   "plugins": [
     {
       "name": "crossvendor-review",
       "description": "Run review lenses and advisor questions on Codex, GLM, Grok and Muse from Claude Code, with Claude as the host that weighs the answers.",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "author": {
         "name": "2lem"
       },
