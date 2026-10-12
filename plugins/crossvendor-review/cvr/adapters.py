@@ -4,8 +4,9 @@ Every adapter runs the vendor without tools, web access or the user's own instru
 it, in an empty temporary working directory outside the repository, and records which model actually answered:
   claude  `claude -p --safe-mode`, no tools, no MCP servers; the model is read from the result envelope.
   codex   `codex exec` in its read-only sandbox without the user config file, with shell, web, plugins and similar
-          features off; on macOS the global instruction files are also made unreadable with sandbox-exec. The model
-          and effort are read from the CLI banner.
+          features off; on macOS the global instruction files are also made unreadable with sandbox-exec when it can
+          start (the receipt says isolation "none" when it could not). The model and effort are read from the CLI
+          banner.
   grok    `grok` with no tools, one turn and a neutral system prompt.
   muse    `muse exec` with web, shell and write tools off and its internal reminder passes off.
   glm     HTTPS request to the Z.ai Anthropic-compatible endpoint with your own API key (never logged, never sent

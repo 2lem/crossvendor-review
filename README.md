@@ -81,24 +81,31 @@ Claude inside Claude Code.
 
 | Command | What is sent | Sent to |
 |---|---|---|
-| review | The change: the diff and the new version of each changed file | The vendor of each lens |
+| review | The change: the diff and the new version of each changed file (new untracked files included) | The vendor of each lens |
 | advise | Your question and the files you name (and the change, with `--diff`) | Every advisor model |
 | setup, plan, doctor | Nothing (`doctor --live` sends one short test prompt per vendor) | - |
 
+A new file you have not added to git is part of the change and is sent unless `.gitignore` excludes it. Use
+`--paths` to narrow the change.
+
 Before anything is sent:
 
-- files with sensitive-looking paths (`.env`, private keys, credential files, `secrets/` directories) are left out;
+- files with sensitive-looking paths (`.env`, private keys, credential files, `secrets/` directories) are left out
+  and only counted, not named;
 - values that look like API keys, tokens, passwords (the password in a connection URL and Bearer tokens included)
-  or private keys are replaced with `<redacted:...>`, in your question too;
-- binary files, files over 200 KB, symbolic links and submodules are named but not included; for a file over 200 KB
-  only its diff is sent, and only while that diff stays under 200 KB.
+  or private keys are replaced with `<redacted:...>`, in your question, file names and the base branch name too;
+- in a review, binary files, files over 200 KB, symbolic links and submodules are named but not included; for a
+  file over 200 KB only its diff is sent, and only while that diff stays under 200 KB;
+- a file you name for `advise` is read through a symbolic link only when its target stays inside the folder and
+  does not look sensitive; an absolute path is read as given, and the vendor sees only its file name.
 
 Redaction is pattern-based: it catches common key formats and `password = ...` style assignments, not every
 secret. Do not rely on it for files that hold secrets in other forms.
 
-The vendors are called without tools, web access or repository access: they see only that text. Check your
-organization's rules before sending code to any vendor. Some plans may use submitted content for training; the data
-privacy lens is placed on another vendor than GLM when you select one.
+The vendors are called without tools, web access or repository access: they see only that text (for Codex, see
+the last item under Limitations). Check your organization's rules before sending code to any vendor. Some plans
+may use submitted content for training; the data privacy lens is placed on another vendor than GLM when you select
+one.
 
 ## How lenses are assigned
 
@@ -140,14 +147,18 @@ It never holds credentials.
 
 - `overrides` accepts `review_model`, `review_effort`, `advisor_models` and `advisor_effort` per vendor.
 - `guideline_files` are sent to the maintainability lens so it can check the change against your project rules.
-  They are not sent unless you list them.
+  They are not sent unless you list them, and a listed file is skipped when it resolves outside the repository
+  (through a linked directory, for example) or its path looks sensitive.
 
 ## Limitations
 
 - Reviewers see only the change and the changed files, not the rest of the repository.
 - Large changes must be narrowed with `--paths` (the default limit is 400,000 characters per call).
 - Vendor CLIs change their flags; if a vendor fails after an update, `doctor --live` shows the error.
-- On macOS the Codex call also hides your global Codex instruction files; on Linux it does not.
+- Codex reads your global instruction files (`AGENTS.md` in `~/.codex`) and may send them with the review. On macOS
+  they are hidden with `sandbox-exec`, unless `CVR_CODEX_ISOLATION=off` is set or `sandbox-exec` cannot start (for
+  example inside another sandbox, where the call runs without it). On Linux they are not hidden. Each Codex call's
+  `receipt.json` in the run directory shows `isolation: none` when they were not hidden.
 
 ## Tests
 

@@ -2,10 +2,12 @@
 
 Exactly this text is sent, nothing else. Before it is built:
   - files whose path looks sensitive (.env files, private keys, credential files, secrets/ directories) are left out
-    of both the diff and the file list, and named as omitted; a context file is checked by its resolved target too,
-    and a relative context path that resolves outside the folder (through a link, for example) is refused;
+    of both the diff and the file list, and only counted, never named (a name can say as much as the file); a
+    context or guideline file is checked by its resolved target too, and a relative path that resolves outside the
+    folder (through a link, for example) is refused and counted the same way;
   - values that look like API keys, tokens, passwords or private keys are replaced with <redacted:...>, in the
-    question as well; line breaks inside a replaced value are kept so line numbers stay right;
+    question, file names and the base name as well; line breaks inside a replaced value are kept so line numbers
+    stay right;
   - binary files, files over 200 KB, symbolic links and directories (submodules) are named but not included; the
     diff of a file over 200 KB is kept only while the diff itself stays under 200 KB.
 """
@@ -21,7 +23,7 @@ SENSITIVE_PATH_RE = re.compile(
     r"(^|/)(\.env(\.[^/]*)?|\.netrc|\.npmrc|\.pypirc|\.pgpass|\.git-credentials|id_rsa|id_dsa|id_ecdsa|id_ed25519"
     r"|credentials(\.json)?|service[-_]?account[^/]*\.json)$|\.(pem|key|p12|pfx|keystore|jks)$"
     r"|(^|/)\.?secrets?/|(^|/)\.aws/|(^|/)\.docker/config\.json$|(^|/)\.kube/config$", re.I)
-NAME_SUFFIX = r"(?:[_-]?(?:key|value))?"  # secret_key, token_value
+NAME_SUFFIX = r"(?:[_-]?(?:access[_-]?)?(?:key|value))?"  # secret_key, token_value, secret_access_key
 PASSWORD_NAME = r"(?:password|passwd|pwd|passphrase)" + NAME_SUFFIX
 SECRET_NAME = r"(?:api[_-]?key|secret|token|password|passwd|pwd|passphrase|private[_-]?key|credentials?)" + NAME_SUFFIX
 MIN_UNQUOTED = {"assigned-password": 4, "assigned-secret": 16}
@@ -101,6 +103,25 @@ def redact(text):
 
 def sensitive(path):
     return SENSITIVE_PATH_RE.search(path) is not None
+
+
+# Files left out for these reasons are counted in the text sent, not named.
+COUNTED = {"sensitive path": "a sensitive-looking path", "resolves outside the folder": "a path outside the folder"}
+
+
+def not_included(omitted):
+    """(line, redactions): the line that tells the vendor which files were left out."""
+    named, counted, redactions = [], {}, 0
+    for path, reason in omitted:
+        if reason in COUNTED:
+            counted[reason] = counted.get(reason, 0) + 1
+            continue
+        shown, n = redact(path)
+        redactions += n
+        named.append("%s (%s)" % (shown, reason))
+    for reason in sorted(counted):
+        named.append("%d file%s with %s" % (counted[reason], "" if counted[reason] == 1 else "s", COUNTED[reason]))
+    return ("Not included: " + "; ".join(named) if named else ""), redactions
 
 
 def numbered(text):
@@ -185,9 +206,11 @@ def review_packet(repo, base=None, paths=None, max_chars=400000, guideline_files
     diff = git(repo, DIFF_ARGS + [rev, "--"] + tracked) if tracked else ""
     diff, n = redact(diff)
     redactions += n
+    shown_base, n = redact(base or "")
+    redactions += n
     parts = ["=== CHANGE PACKET ===",
              "A change to an existing project. The diff is against %s; each changed file follows in its new version "
-             "with line numbers." % ("the merge base with " + base if base else "the last commit"), "",
+             "with line numbers." % ("the merge base with " + shown_base if base else "the last commit"), "",
              "--- DIFF ---", diff.rstrip("\n") or "(no tracked changes; new files only)", "--- END DIFF ---"]
     for status, path in keep:
         if status.startswith("D"):
@@ -197,16 +220,20 @@ def review_packet(repo, base=None, paths=None, max_chars=400000, guideline_files
             omitted.append((path, reason + ("; only its diff is included" if path in diff_only else "")))
             continue
         text, n = redact(text)
-        redactions += n
+        shown, k = redact(path)
+        redactions += n + k
         label = "new, untracked" if status == "?" else ("new" if status.startswith("A") else "modified")
-        parts += ["", "--- FILE %s (%s) ---" % (path, label), numbered(text), "--- END FILE ---"]
+        parts += ["", "--- FILE %s (%s) ---" % (shown, label), numbered(text), "--- END FILE ---"]
         included.append(path)
-    if omitted:
-        parts += ["", "Not included: " + "; ".join("%s (%s)" % o for o in omitted)]
+    line, n = not_included(omitted)
+    redactions += n
+    if line:
+        parts += ["", line]
     parts += ["=== END PACKET ==="]
     packet = "\n".join(parts) + "\n"
-    guidelines, gn = guidelines_text(repo, guideline_files)
+    guidelines, gn, skipped = guidelines_text(repo, guideline_files)
     redactions += gn
+    omitted += skipped  # shown in the user's own report only
     if len(packet) + len(guidelines) > max_chars:
         biggest = sorted(included, key=lambda p: -os.path.getsize(os.path.join(repo, p)))[:5]
         raise PacketError("the change is too large to send (%d characters, limit %d); narrow it with --paths. "
@@ -236,20 +263,34 @@ def large_in_diff(repo, rev, paths):
 
 
 def guidelines_text(repo, files):
-    parts, redactions = [], 0
+    """(text, redactions, skipped). A guideline file must stay inside the repository once links are resolved (a
+    linked directory on the way included), its resolved path must not look sensitive, and it must not be a link."""
+    parts, redactions, skipped = [], 0, []
+    root = os.path.realpath(repo)
     for rel in files:
         full = os.path.join(repo, rel)
-        if sensitive(rel) or not os.path.isfile(full):
+        real = os.path.realpath(full)
+        if not real.startswith(root + os.sep):
+            skipped.append((rel, "guideline file outside the repository"))
+            continue
+        if sensitive(rel) or sensitive(os.path.relpath(real, root)):
+            skipped.append((rel, "guideline file with a sensitive path"))
+            continue
+        if not os.path.isfile(full):
+            skipped.append((rel, "guideline file not found"))
             continue
         text, reason = read_text(full)
         if text is None:
+            skipped.append((rel, "guideline file: " + reason))
             continue
         text, n = redact(text)
-        redactions += n
-        parts += ["--- GUIDELINES %s ---" % rel, text.rstrip("\n"), "--- END GUIDELINES ---"]
+        shown, k = redact(rel)
+        redactions += n + k
+        parts += ["--- GUIDELINES %s ---" % shown, text.rstrip("\n"), "--- END GUIDELINES ---"]
     if not parts:
-        return "", 0
-    return "=== PROJECT GUIDELINES ===\n" + "\n".join(parts) + "\n=== END GUIDELINES ===\n", redactions
+        return "", 0, skipped
+    return ("=== PROJECT GUIDELINES ===\n" + "\n".join(parts) + "\n=== END GUIDELINES ===\n", redactions,
+            skipped)
 
 
 def context_packet(question, files, base_dir, diff_text="", max_chars=400000):
@@ -264,7 +305,8 @@ def context_packet(question, files, base_dir, diff_text="", max_chars=400000):
             continue
         # A relative path must stay inside the folder once links are resolved, a linked directory on the way included;
         # an absolute path is an explicit choice of the user.
-        inside = os.path.realpath(full).startswith(os.path.realpath(base_dir) + os.sep)
+        root = os.path.realpath(base_dir)
+        inside = os.path.realpath(full).startswith(root + os.sep)
         if not os.path.isabs(rel) and not inside:
             omitted.append((rel, "resolves outside the folder"))
             continue
@@ -274,14 +316,22 @@ def context_packet(question, files, base_dir, diff_text="", max_chars=400000):
         if text is None:
             omitted.append((rel, reason))
             continue
+        # An absolute path is shown relative to the folder, or by its file name only: the rest of it names the
+        # user's own directories.
+        label = rel
+        if os.path.isabs(rel):
+            label = os.path.relpath(os.path.realpath(full), root) if inside else os.path.basename(rel)
         text, n = redact(text)
-        redactions += n
-        parts += ["", "--- CONTEXT FILE %s ---" % rel, numbered(text), "--- END CONTEXT FILE ---"]
+        shown, k = redact(label)
+        redactions += n + k
+        parts += ["", "--- CONTEXT FILE %s ---" % shown, numbered(text), "--- END CONTEXT FILE ---"]
         included.append(rel)
     if diff_text:
         parts += ["", diff_text.rstrip("\n")]
-    if omitted:
-        parts += ["", "Not included: " + "; ".join("%s (%s)" % o for o in omitted)]
+    line, n = not_included(omitted)
+    redactions += n
+    if line:
+        parts += ["", line]
     text = "\n".join(parts) + "\n"
     if len(text) > max_chars:
         raise PacketError("the context is too large to send (%d characters, limit %d)" % (len(text), max_chars))

@@ -138,6 +138,36 @@ class ReviewPacketTests(unittest.TestCase):
         self.assertNotIn(SECRET, guidelines)
         self.assertGreater(stats["guideline_chars"], 0)
 
+    def test_guideline_through_a_linked_directory_is_refused(self):
+        write(os.path.join(self.env.tmp, "outside", "rules.md"), "OUTSIDE RULES\n")
+        os.symlink(os.path.join(self.env.tmp, "outside"), os.path.join(self.repo, "rules"))
+        write(os.path.join(self.repo, ".secrets", "r.md"), "SECRET RULES\n")
+        os.symlink(os.path.join(self.repo, ".secrets"), os.path.join(self.repo, "docs"))
+        write(os.path.join(self.repo, "CONTRIBUTING.md"), "Use snake_case.\n")
+        _, guidelines, stats = packet.review_packet(
+            self.repo, guideline_files=["rules/rules.md", "docs/r.md", "CONTRIBUTING.md"])
+        self.assertIn("Use snake_case.", guidelines)
+        self.assertNotIn("OUTSIDE RULES", guidelines)
+        self.assertNotIn("SECRET RULES", guidelines)
+        omitted = dict(stats["omitted"])
+        self.assertEqual(omitted["rules/rules.md"], "guideline file outside the repository")
+        self.assertEqual(omitted["docs/r.md"], "guideline file with a sensitive path")
+
+    def test_left_out_and_shown_names_are_not_sent(self):
+        key = "sk-ant-" + "q" * 30
+        write(os.path.join(self.repo, "acme-customer", "secrets", "prod.env"), "K=1\n")
+        write(os.path.join(self.repo, "notes-%s.txt" % key), "hello\n")
+        write(os.path.join(self.repo, "app.py"), "x = 9\n")
+        run_git(self.repo, "branch", "base-" + key)
+        text, _, stats = packet.review_packet(self.repo, base="base-" + key)
+        self.assertNotIn("acme-customer", text)
+        self.assertNotIn(key, text)
+        self.assertIn("1 file with a sensitive-looking path", text)
+        self.assertIn("--- FILE notes-<redacted:anthropic-key>.txt (new, untracked) ---", text)
+        self.assertIn("the merge base with base-<redacted:anthropic-key>", text)
+        # the user's own report keeps the name
+        self.assertEqual(dict(stats["omitted"])["acme-customer/secrets/prod.env"], "sensitive path")
+
 
 class ContextPacketTests(unittest.TestCase):
     def setUp(self):
@@ -224,6 +254,35 @@ class ContextPacketTests(unittest.TestCase):
                                                   "../elsewhere.md": "resolves outside the folder"})
         text, _ = packet.context_packet("Q", [os.path.join(self.env.tmp, "elsewhere.md")], folder)
         self.assertIn("outside text", text)  # an absolute path is the user's explicit choice
+
+    def test_left_out_context_files_are_counted_and_labels_redacted(self):
+        key = "sk-ant-" + "q" * 30
+        folder = os.path.join(self.env.tmp, "project")
+        write(os.path.join(folder, "acme-customer", "secrets", "prod.env"), "K=1\n")
+        write(os.path.join(folder, "notes-%s.md" % key), "inside\n")
+        write(os.path.join(folder, "docs", "a.md"), "nested\n")
+        outside = os.path.join(self.env.tmp, "client-acme", "plan.md")
+        write(outside, "outside plan\n")
+        text, stats = packet.context_packet(
+            "Q", ["acme-customer/secrets/prod.env", "notes-%s.md" % key, "../client-acme/plan.md", outside,
+                  os.path.join(folder, "docs", "a.md")], folder)
+        self.assertIn("outside plan", text)
+        self.assertNotIn("acme", text)
+        self.assertNotIn(key, text)
+        self.assertNotIn(self.env.tmp, text)
+        self.assertIn("--- CONTEXT FILE plan.md ---", text)
+        self.assertIn("--- CONTEXT FILE docs/a.md ---", text)
+        self.assertIn("--- CONTEXT FILE notes-<redacted:anthropic-key>.md ---", text)
+        self.assertIn("1 file with a sensitive-looking path", text)
+        self.assertIn("1 file with a path outside the folder", text)
+
+    def test_aws_secret_access_key_assignments(self):
+        value = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+        for line in ("AWS_SECRET_ACCESS_KEY=" + value, 'aws_secret_access_key = "%s"' % value,
+                     "aws_secret_access_key: " + value):
+            out, n = packet.redact(line)
+            self.assertNotIn(value, out, line)
+            self.assertEqual(n, 1, line)
 
     def test_redaction_patterns(self):
         cases = ["ghp_" + "b" * 36, "AKIA" + "C" * 16, "xai-" + "d" * 24, "AIza" + "e" * 35,
