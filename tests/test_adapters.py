@@ -91,6 +91,7 @@ class StandInTests(unittest.TestCase):
         self.assertIn("--safe-mode", logged["claude"]["args"])
         self.assertEqual(logged["codex"]["args"][-1], "-")  # prompt comes from stdin, not argv
         self.assertIn("--disable-shell", logged["muse"]["args"])
+        self.assertIn("--disable-reminders", logged["muse"]["args"])
         self.assertEqual(GlmHandler.calls[0]["auth"], "Bearer test-key-123")
         self.assertEqual(GlmHandler.calls[0]["body"]["max_tokens"], adapters.GLM_MAX_TOKENS)
 

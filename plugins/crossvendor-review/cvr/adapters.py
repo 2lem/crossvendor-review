@@ -7,7 +7,7 @@ it, in an empty temporary working directory outside the repository, and records 
           features off; on macOS the global instruction files are also made unreadable with sandbox-exec. The model
           and effort are read from the CLI banner.
   grok    `grok` with no tools, one turn and a neutral system prompt.
-  muse    `muse exec` with web, shell and write tools off.
+  muse    `muse exec` with web, shell and write tools off and its internal reminder passes off.
   glm     HTTPS request to the Z.ai Anthropic-compatible endpoint with your own API key (never logged, never sent
           to a redirect target).
 Receipt status: ok, empty, error, timeout, model-mismatch, refused, truncated, auth, quota, missing. Only "ok"
@@ -292,7 +292,7 @@ def muse_argv(binary, model, effort, prompt_path, workspace):
     return [binary, "exec", "--provider", "meta", "--model", model, "--reasoning-effort", effort, "--json",
             "--no-session-log", "--prompt-file", prompt_path, "--workspace", workspace, "--worktree", "off",
             "--approval-mode", "never", "--disable-web-tools", "--no-foreign-personal-context",
-            "--disable-write", "--disable-shell"]
+            "--disable-write", "--disable-shell", "--disable-reminders"]
 
 
 def parse_muse(raw):
