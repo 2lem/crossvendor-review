@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "_doc": "Lens order is part of the assignment: the same selection always gives the same table. 'avoid' lists vendor flags a lens should not be placed on when another selected vendor is available; if none is, the lens is still placed and a warning is shown.",
+  "lenses": [
+    {"id": "security"},
+    {"id": "architecture"},
+    {"id": "correctness"},
+    {"id": "performance"},
+    {"id": "tests"},
+    {"id": "maintainability"},
+    {"id": "data-privacy", "avoid": ["may_train_on_input"]},
+    {"id": "dependencies"},
+    {"id": "adversarial"}
+  ]
+}

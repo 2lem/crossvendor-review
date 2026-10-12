@@ -1,0 +1,68 @@
+{
+  "schema_version": 1,
+  "last_verified": "2026-10-12",
+  "_doc": "Vendor defaults. Model ids and CLI flags change over time; 'last_verified' is the date they were last checked. Override models per vendor in your config file instead of editing this file.",
+  "order": ["claude", "codex", "glm", "grok", "muse"],
+  "vendors": {
+    "claude": {
+      "display": "Claude",
+      "transport": "cli",
+      "binary": "claude",
+      "login_check": ["claude", "auth", "status"],
+      "login_hint": "run: claude auth login",
+      "review_model": "claude-opus-5-5",
+      "review_effort": "max",
+      "advisor_models": ["claude-opus-5-5", "claude-fable-5-1"],
+      "advisor_effort": "max",
+      "flags": []
+    },
+    "codex": {
+      "display": "Codex",
+      "transport": "cli",
+      "binary": "codex",
+      "login_check": ["codex", "login", "status"],
+      "login_hint": "run: codex login",
+      "review_model": "gpt-6.1-sol",
+      "review_effort": "high",
+      "advisor_models": ["gpt-6-astra"],
+      "advisor_effort": "max",
+      "flags": []
+    },
+    "glm": {
+      "display": "GLM",
+      "transport": "http",
+      "endpoint": "https://api.z.ai/api/anthropic",
+      "key_env": "ZAI_API_KEY",
+      "login_hint": "export ZAI_API_KEY in your shell profile (a pay-as-you-go API key)",
+      "review_model": "glm-5.3",
+      "review_effort": "max",
+      "advisor_models": ["glm-5.3"],
+      "advisor_effort": "max",
+      "flags": ["may_train_on_input"]
+    },
+    "grok": {
+      "display": "Grok",
+      "transport": "cli",
+      "binary": "grok",
+      "login_check": null,
+      "login_hint": "run: grok login",
+      "review_model": "grok-4.7",
+      "review_effort": "xhigh",
+      "advisor_models": ["grok-4.7"],
+      "advisor_effort": "xhigh",
+      "flags": []
+    },
+    "muse": {
+      "display": "Muse",
+      "transport": "cli",
+      "binary": "muse",
+      "login_check": null,
+      "login_hint": "run: muse login",
+      "review_model": "muse-spark-1.3",
+      "review_effort": "max",
+      "advisor_models": ["muse-spark-1.3"],
+      "advisor_effort": "max",
+      "flags": []
+    }
+  }
+}
